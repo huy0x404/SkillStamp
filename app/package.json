@@ -1,0 +1,9 @@
+{
+  "name": "skillstamp-app",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "genlayer-js": "latest"
+  }
+}

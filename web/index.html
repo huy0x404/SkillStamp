@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SkillStamp</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏅</text></svg>">
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--ink:#14161f;--mute:#5d6477;--line:#e3e6ef;--brand:#5b4bff;--brand-ink:#fff;
+--none:#8a91a5;--basic:#b7791f;--solid:#2b7bd8;--strong:#12945a;--err:#c93a3a;--warn-bg:#fff4d6;--warn-ink:#6b4a00;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1117;--card:#181b25;--ink:#eceef6;--mute:#9aa2b8;--line:#2a2f3d;--brand:#8b7fff;--brand-ink:#0f1117;
+--none:#8a91a5;--basic:#e0a93b;--solid:#5aa2f0;--strong:#3ecf8e;--err:#ef6b6b;--warn-bg:#3a2f10;--warn-ink:#f3d78a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0f1117;--card:#181b25;--ink:#eceef6;--mute:#9aa2b8;--line:#2a2f3d;--brand:#8b7fff;--brand-ink:#0f1117;
+--none:#8a91a5;--basic:#e0a93b;--solid:#5aa2f0;--strong:#3ecf8e;--err:#ef6b6b;--warn-bg:#3a2f10;--warn-ink:#f3d78a;color-scheme:dark}
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:26px;letter-spacing:-.02em}h2{font-size:17px;margin:0 0 12px}
+.sub{color:var(--mute);margin:4px 0 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:16px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;border:1px solid var(--line)}
+.banner{background:var(--warn-bg);color:var(--warn-ink);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:14px}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
+input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+input:focus-visible,button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 16px;cursor:pointer;background:var(--brand);color:var(--brand-ink)}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.55;cursor:wait}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}.row>*{flex:1 1 180px}.row>button{flex:0 0 auto}
+.claim{border-top:1px solid var(--line);padding:14px 0}.claim:first-child{border-top:0}
+.top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap}
+.skill{font-weight:700}.url{color:var(--mute);font-size:13px;word-break:break-all}.url a{color:var(--brand)}
+.badge{font-weight:800;font-size:13px;padding:4px 12px;border-radius:99px;color:#fff}
+.NONE{background:var(--none)}.BASIC{background:var(--basic)}.SOLID{background:var(--solid)}.STRONG{background:var(--strong)}
+.bar{display:flex;gap:4px;margin:8px 0 2px}.bar i{height:6px;flex:1;border-radius:3px;background:var(--line)}.bar i.on{background:var(--brand)}
+.reason{font-size:14px;color:var(--mute);margin:6px 0 0}
+.err{color:var(--err);font-size:14px;margin-top:8px;min-height:1em}
+.empty{color:var(--mute);text-align:center;padding:18px 0}
+.meta{font-size:12px;color:var(--mute);margin-top:6px;word-break:break-all}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div><h1>🏅 SkillStamp</h1><p class="sub">Claim a skill. GenLayer validators grade your proof.</p></div>
+  <span class="pill" id="modePill">Demo mode</span>
+</header>
+<div class="banner" id="banner"></div>
+
+<section class="card">
+  <h2>Connection</h2>
+  <div class="row">
+    <div><label for="addr">Contract address (leave empty for Demo)</label><input id="addr" placeholder="0x…" autocomplete="off" spellcheck="false"></div>
+    <button class="ghost" id="connect">Connect</button>
+  </div>
+  <div class="meta" id="who"></div>
+</section>
+
+<section class="card">
+  <h2>1 · Claim a skill</h2>
+  <label for="skill">Skill</label><input id="skill" maxlength="80" placeholder="Python backend development">
+  <label for="url">Evidence URL</label><input id="url" maxlength="300" placeholder="https://github.com/you/project">
+  <div class="row" style="margin-top:12px"><button id="claimBtn">Claim skill</button></div>
+  <div class="err" id="claimErr" role="alert"></div>
+</section>
+
+<section class="card">
+  <div class="top"><h2>2 · Claims &amp; badges</h2><button class="ghost" id="refresh">Refresh</button></div>
+  <div id="list"><div class="empty">Loading…</div></div>
+  <div class="err" id="listErr" role="alert"></div>
+</section>
+</main>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const safeUrl = (u) => /^https?:\/\//i.test(u) ? u : "";
+
+// ---- Demo backend: in-browser mock, NOT real consensus -------------------------------
+function demoApi() {
+  const claims = [];
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  return {
+    who: "demo-user",
+    async claim_skill(skill, url) {
+      if (!skill.trim()) throw new Error("skill must not be empty");
+      if (!/^https?:\/\//i.test(url.trim())) throw new Error("evidence_url must start with http:// or https://");
+      await wait(300);
+      claims.push({ id: claims.length, owner: "demo-user", skill: skill.trim(), url: url.trim(), status: "claimed", level: "", score: 0, reason: "" });
+    },
+    async verify(id) {
+      const c = claims[id]; if (!c) throw new Error("unknown claim_id " + id);
+      if (c.status !== "claimed") throw new Error("claim " + id + " is already " + c.status);
+      await wait(1200);
+      // Toy heuristic only, so the UI can be explored without a network.
+      const u = c.url.toLowerCase();
+      const score = (u.includes("github.com") ? 3 : u.includes("example.") ? 0 : 2) + (c.skill.length > 12 ? 1 : 0) + 1;
+      c.score = Math.min(6, score);
+      c.level = c.score >= 5 ? "STRONG" : c.score >= 4 ? "SOLID" : c.score >= 2 ? "BASIC" : "NONE";
+      c.reason = "Demo heuristic: based on the URL and skill text only. Switch to Live mode for real validator consensus.";
+      c.status = "verified";
+    },
+    async all() { return claims.slice().reverse(); },
+  };
+}
+
+// ---- Live backend: genlayer-js against a deployed contract ----------------------------
+// TODO(verify): CDN import paths and waitForTransactionReceipt options (AGENTS.md section 10).
+async function liveApi(address) {
+  const [{ createClient, createAccount }, { studionet }, { TransactionStatus }] = await Promise.all([
+    import("https://esm.sh/genlayer-js"), import("https://esm.sh/genlayer-js/chains"), import("https://esm.sh/genlayer-js/types"),
+  ]);
+  const account = createAccount(); // throwaway Studio account, lost on reload by design
+  const client = createClient({ chain: studionet, account });
+  const plain = (v) => typeof v === "bigint" ? Number(v) : v instanceof Map ? Object.fromEntries([...v].map(([k, x]) => [k, plain(x)]))
+    : Array.isArray(v) ? v.map(plain) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)])) : v;
+  const read = async (fn, args = []) => plain(await client.readContract({ address, functionName: fn, args }));
+  const write = async (fn, args) => {
+    const hash = await client.writeContract({ address, functionName: fn, args, value: 0n });
+    await client.waitForTransactionReceipt({ hash, status: TransactionStatus.ACCEPTED, retries: 60, interval: 3000 });
+  };
+  await read("get_count"); // fail fast on a wrong address
+  return {
+    who: account.address,
+    claim_skill: (skill, url) => write("claim_skill", [skill, url]),
+    verify: (id) => write("verify", [id]),
+    async all() {
+      const n = await read("get_count"); const out = [];
+      for (let i = n - 1; i >= 0 && out.length < 30; i--) out.push(await read("get_claim", [i]));
+      return out;
+    },
+  };
+}
+
+// ---- UI ------------------------------------------------------------------------------
+let api = demoApi();
+const busy = (btn, on) => { btn.disabled = on; };
+const msg = (e) => e?.shortMessage ?? e?.message ?? String(e);
+
+function setMode(live) {
+  $("#modePill").textContent = live ? "Live · Studio" : "Demo mode";
+  $("#banner").textContent = live
+    ? "Live mode: claims and grading run on the deployed contract. Verification can take a minute."
+    : "Demo mode: everything runs in your browser with a toy heuristic. This is not real validator consensus.";
+  $("#who").textContent = "Account: " + api.who;
+}
+
+function render(claims) {
+  if (!claims.length) { $("#list").innerHTML = '<div class="empty">No claims yet. Create one above.</div>'; return; }
+  $("#list").innerHTML = claims.map((c) => {
+    const href = safeUrl(c.url);
+    const link = href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(c.url)}</a>` : esc(c.url);
+    const verified = c.status === "verified";
+    const bar = Array.from({ length: 6 }, (_, i) => `<i class="${verified && i < c.score ? "on" : ""}"></i>`).join("");
+    return `<div class="claim">
+      <div class="top"><div><div class="skill">#${esc(c.id)} · ${esc(c.skill)}</div><div class="url">${link}</div></div>
+      ${verified ? `<span class="badge ${esc(c.level)}">${esc(c.level)}</span>` : `<button data-verify="${esc(c.id)}">Verify</button>`}</div>
+      ${verified ? `<div class="bar" aria-label="score ${esc(c.score)} of 6">${bar}</div><p class="reason">${esc(c.reason)}</p>` : ""}
+      <div class="meta">${esc(c.status)} · owner ${esc(c.owner)}</div></div>`;
+  }).join("");
+}
+
+async function refresh() {
+  $("#listErr").textContent = "";
+  try { render(await api.all()); } catch (e) { $("#listErr").textContent = msg(e); }
+}
+
+$("#connect").onclick = async (ev) => {
+  const addr = $("#addr").value.trim(); $("#listErr").textContent = "";
+  busy(ev.target, true);
+  try {
+    api = addr ? await liveApi(addr) : demoApi();
+    setMode(Boolean(addr)); await refresh();
+  } catch (e) { api = demoApi(); setMode(false); $("#listErr").textContent = "Could not connect: " + msg(e); }
+  busy(ev.target, false);
+};
+
+$("#claimBtn").onclick = async (ev) => {
+  $("#claimErr").textContent = ""; busy(ev.target, true);
+  try {
+    await api.claim_skill($("#skill").value, $("#url").value);
+    $("#skill").value = ""; $("#url").value = ""; await refresh();
+  } catch (e) { $("#claimErr").textContent = msg(e); }
+  busy(ev.target, false);
+};
+
+$("#list").onclick = async (ev) => {
+  const btn = ev.target.closest("[data-verify]"); if (!btn) return;
+  $("#listErr").textContent = ""; btn.disabled = true; btn.textContent = "Grading…";
+  try { await api.verify(Number(btn.dataset.verify)); } catch (e) { $("#listErr").textContent = msg(e); }
+  await refresh();
+};
+$("#refresh").onclick = refresh;
+
+setMode(false); refresh();
+</script>
+</body>
+</html>

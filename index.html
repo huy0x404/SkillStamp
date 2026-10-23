@@ -856,6 +856,7 @@ dialog::backdrop {
         </div>
       </div>
       <button class="ghost" id="connect">Connect Contract</button>
+      <button class="ghost" id="walletBtn" title="Connect MetaMask / Browser Web3 Wallet">🦊 Connect Wallet</button>
     </div>
     <div class="claim-footer" style="margin-top:12px">
       <span id="whoText">Account: Demo Simulator</span>
@@ -1150,6 +1151,9 @@ async function liveApi(address) {
       const claims = [];
       for (let i = count - 1; i >= 0 && claims.length < 50; i--) {
         const c = await read("get_claim", [i]);
+        if (c && c.relevance !== undefined) {
+          c.scores = { relevance: Number(c.relevance), depth: Number(c.depth), authenticity: Number(c.authenticity) };
+        }
         claims.push(c);
       }
       return claims;
@@ -1373,9 +1377,72 @@ function openInspectModal(claimId) {
         </div>
       </div>
     ` : ""}
+    <div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap">
+      <button type="button" class="ghost" id="exportSvgBtn" style="font-size:12.5px; padding:8px 14px">
+        ⬇️ Download SVG Badge
+      </button>
+      <button type="button" class="ghost" id="copyMarkdownBtn" style="font-size:12.5px; padding:8px 14px">
+        📋 Copy Markdown Badge
+      </button>
+    </div>
   `;
 
+  $("#exportSvgBtn").onclick = () => {
+    const svgCode = generateBadgeSvg(c);
+    const blob = new Blob([svgCode], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `skillstamp-${c.skill.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-badge.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  $("#copyMarkdownBtn").onclick = async (e) => {
+    const md = `[![SkillStamp: ${esc(c.skill)}](https://img.shields.io/badge/SkillStamp-${esc(c.level)}-10b981?style=for-the-badge&logo=shield)](${esc(c.url)})`;
+    await navigator.clipboard.writeText(md);
+    e.target.textContent = "✓ Markdown Copied!";
+    setTimeout(() => { e.target.textContent = "📋 Copy Markdown Badge"; }, 1500);
+  };
+
   inspectModal.showModal();
+}
+
+function generateBadgeSvg(c) {
+  const theme = {
+    STRONG: { border: '#10b981', fill: '#059669', bg1: '#064e3b', bg2: '#022c22' },
+    SOLID: { border: '#38bdf8', fill: '#0284c7', bg1: '#075985', bg2: '#082f49' },
+    BASIC: { border: '#fbbf24', fill: '#d97706', bg1: '#78350f', bg2: '#451a03' },
+    NONE: { border: '#94a3b8', fill: '#64748b', bg1: '#334155', bg2: '#0f172a' }
+  }[c.level] || { border: '#94a3b8', fill: '#64748b', bg1: '#334155', bg2: '#0f172a' };
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 320" width="600" height="320">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${theme.bg1}"/>
+      <stop offset="100%" stop-color="${theme.bg2}"/>
+    </linearGradient>
+    <linearGradient id="badgeGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="${theme.border}"/>
+      <stop offset="100%" stop-color="${theme.fill}"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="320" rx="16" fill="url(#bg)" stroke="${theme.border}" stroke-width="2"/>
+  <text x="36" y="44" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11" font-weight="700" letter-spacing="2">SKILLSTAMP CREDENTIAL &bull; GENLAYER</text>
+  <text x="36" y="84" fill="#f8fafc" font-family="system-ui, sans-serif" font-size="22" font-weight="800">${esc(c.skill)}</text>
+  <rect x="36" y="104" width="105" height="26" rx="13" fill="url(#badgeGlow)"/>
+  <text x="88" y="121" fill="#ffffff" font-family="system-ui, sans-serif" font-size="11" font-weight="800" text-anchor="middle" letter-spacing="1">${esc(c.level || 'UNVERIFIED')}</text>
+  <text x="154" y="122" fill="#cbd5e1" font-family="system-ui, sans-serif" font-size="13" font-weight="600">Score: ${esc(c.score ?? 0)} / 6</text>
+  <line x1="36" y1="148" x2="564" y2="148" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+  <text x="36" y="174" fill="#94a3b8" font-family="monospace" font-size="10">OWNER</text>
+  <text x="36" y="192" fill="#f1f5f9" font-family="monospace" font-size="12">${esc(c.owner)}</text>
+  <text x="36" y="224" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="10">RUBRIC CRITERIA</text>
+  <text x="36" y="244" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="12">Relevance: ${c.scores?.relevance ?? 0}/2 &bull; Depth: ${c.scores?.depth ?? 0}/2 &bull; Authenticity: ${c.scores?.authenticity ?? 0}/2</text>
+  <text x="36" y="284" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="11">&ldquo;${esc(c.reason ? c.reason.slice(0, 75) + '...' : 'Verified by validator consensus.')}&rdquo;</text>
+  <text x="564" y="284" fill="#10b981" font-family="system-ui, sans-serif" font-size="11" font-weight="700" text-anchor="end">&check; EQUIVALENCE CONSENSUS AGREED</text>
+</svg>`;
 }
 
 $("#closeModal").onclick = () => inspectModal.close();
@@ -1524,14 +1591,44 @@ $("#list").onclick = async (ev) => {
   if (verifyBtn) {
     const claimId = Number(verifyBtn.dataset.verify);
     $("#listErr").textContent = "";
-    busy(verifyBtn, true, "Validators grading...");
+
+    busy(verifyBtn, true, "1/3 Fetching evidence URL...");
+    const stageTimer1 = setTimeout(() => { busy(verifyBtn, true, "2/3 LLM rubric grading..."); }, 350);
+    const stageTimer2 = setTimeout(() => { busy(verifyBtn, true, "3/3 Validator consensus agreement..."); }, 750);
+
     try {
       await api.verify(claimId);
+      clearTimeout(stageTimer1);
+      clearTimeout(stageTimer2);
+      busy(verifyBtn, true, "✓ Consensus reached!");
       await refresh();
     } catch (err) {
+      clearTimeout(stageTimer1);
+      clearTimeout(stageTimer2);
       $("#listErr").textContent = "Verification failed: " + msg(err);
       busy(verifyBtn, false, "Verify Badge");
     }
+  }
+};
+
+// Web3 Wallet Connect Button
+$("#walletBtn").onclick = async (ev) => {
+  if (typeof window.ethereum === "undefined") {
+    alert("No browser Web3 wallet detected (MetaMask, Rabby, Coinbase). Using Studio throwaway account.");
+    return;
+  }
+  busy(ev.target, true, "Connecting...");
+  try {
+    const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+    if (accounts && accounts[0]) {
+      api.who = accounts[0];
+      $("#whoText").innerHTML = `Wallet: <span class="owner-addr" style="color:var(--tier-strong)">${accounts[0]}</span>`;
+      $("#walletBtn").textContent = "✓ Wallet Connected";
+    }
+  } catch (err) {
+    alert("Wallet connection rejected: " + msg(err));
+  } finally {
+    busy(ev.target, false);
   }
 };
 

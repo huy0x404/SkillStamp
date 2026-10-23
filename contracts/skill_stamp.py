@@ -93,6 +93,9 @@ class Claim:
     status: str
     level: str
     score: u256
+    relevance: u256
+    depth: u256
+    authenticity: u256
     reason: str
 
 
@@ -140,6 +143,9 @@ class SkillStamp(gl.Contract):
             status="claimed",
             level="",
             score=u256(0),
+            relevance=u256(0),
+            depth=u256(0),
+            authenticity=u256(0),
             reason="",
         )
         self.by_owner.get_or_insert_default(sender).append(claim_id)
@@ -190,6 +196,9 @@ class SkillStamp(gl.Contract):
 
         claim.level = parsed["level"]
         claim.score = u256(sum(parsed["scores"].values()))
+        claim.relevance = u256(parsed["scores"]["relevance"])
+        claim.depth = u256(parsed["scores"]["depth"])
+        claim.authenticity = u256(parsed["scores"]["authenticity"])
         claim.reason = parsed["reason"]
         claim.status = "verified"
 
@@ -226,6 +235,29 @@ class SkillStamp(gl.Contract):
                 badges.append(self._to_dict(cid))
         return badges
 
+    @gl.public.view
+    def get_badge_metadata(self, claim_id: int) -> dict:
+        """Soulbound Badge standard metadata descriptor for web3 profiles/wallets."""
+        cid = u256(claim_id)
+        if cid not in self.claims:
+            raise gl.vm.UserError(f"unknown claim_id {claim_id}")
+        claim = self.claims[cid]
+        return {
+            "name": f"SkillStamp: {claim.skill}",
+            "description": f"Verified skill credential for '{claim.skill}' graded by GenLayer validators.",
+            "external_url": claim.url,
+            "tier": claim.level,
+            "status": claim.status,
+            "owner": claim.owner.as_hex,
+            "scores": {
+                "relevance": int(claim.relevance),
+                "depth": int(claim.depth),
+                "authenticity": int(claim.authenticity),
+                "total": int(claim.score),
+            },
+            "reason": claim.reason,
+        }
+
     # ----------------------------------------------------------------- private
 
     def _to_dict(self, cid: u256) -> dict:
@@ -238,6 +270,9 @@ class SkillStamp(gl.Contract):
             "status": claim.status,
             "level": claim.level,
             "score": int(claim.score),
+            "relevance": int(claim.relevance),
+            "depth": int(claim.depth),
+            "authenticity": int(claim.authenticity),
             "reason": claim.reason,
         }
 

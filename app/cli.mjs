@@ -73,6 +73,10 @@ async function get_badges(owner) {
   console.log(JSON.stringify(await read("get_badges", [owner]), null, 2));
 }
 
+async function get_badge_metadata(id) {
+  console.log(JSON.stringify(await read("get_badge_metadata", [Number(id)]), null, 2));
+}
+
 async function get_count() {
   console.log(await read("get_count"));
 }
@@ -83,6 +87,7 @@ const commands = {
   get: [get_claim, 1, "get <claim_id>"],
   mine: [get_claims_by_owner, 1, "mine <owner_address>"],
   badges: [get_badges, 1, "badges <owner_address>"],
+  metadata: [get_badge_metadata, 1, "metadata <claim_id>"],
   count: [get_count, 0, "count"],
 };
 

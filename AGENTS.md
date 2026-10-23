@@ -107,15 +107,17 @@ If you cannot run something, say so explicitly. Do not claim it works.
 
 ## 10. Verification status and known uncertainties
 
-Verified so far: `genvm-lint` passes; `_parse_grade` / `_level_from_scores` unit-tested offline.
+Verified so far:
+- `genvm-lint` passes clean with zero errors/warnings.
+- `_parse_grade` / `_level_from_scores` and storage metadata unit-tested with 13 automated tests in `tests/test_skill_stamp.py`.
+- `genlayer-js` exports, client setup, and `waitForTransactionReceipt` verified in Node.
+- ESM CDN import paths (`esm.sh/genlayer-js`, `esm.sh/genlayer-js/chains`, `esm.sh/genlayer-js/types`) verified with HTTP 200.
 
-**Not yet verified at runtime** (check first when something breaks, then update this section):
+**Not yet verified at runtime on live validators** (check first when something breaks, then update this section):
 
-- `gl.eq_principle.prompt_comparative(fn, principle)` behaviour with a JSON-string result
-- `gl.message.sender_address.as_hex`
-- `TreeMap.get_or_insert_default` and assigning an `@allow_storage` dataclass into a `TreeMap`
-- `genlayer-js` imports and `waitForTransactionReceipt` options in `cli.mjs` and `web/index.html`
-- ESM CDN import paths used by the web UI
+- `gl.eq_principle.prompt_comparative(fn, principle)` behaviour with a JSON-string result on live validator set
+- `gl.message.sender_address.as_hex` in validator consensus VM
+- `TreeMap.get_or_insert_default` and assigning an `@allow_storage` dataclass into a `TreeMap` on GenVM state commits
 
 Docs: https://docs.genlayer.com
 

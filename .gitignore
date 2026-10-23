@@ -2,7 +2,6 @@
 __pycache__/
 *.py[cod]
 *.class
-.pytest_cache/
 
 # Virtual Environments
 .venv/
@@ -32,5 +31,5 @@ dist/
 build/
 .genlayer/
 
-#
+# Agents
 AGENTS.md

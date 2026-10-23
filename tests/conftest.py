@@ -42,9 +42,15 @@ genlayer_stub.gl = types.SimpleNamespace(
     message=types.SimpleNamespace(sender_address=types.SimpleNamespace(as_hex="0x123")),
 )
 
+class MockAddress(str):
+    @property
+    def as_hex(self):
+        return str(self)
+
+
 genlayer_stub.allow_storage = lambda cls: cls
 genlayer_stub.u256 = int
-genlayer_stub.Address = str
+genlayer_stub.Address = MockAddress
 genlayer_stub.TreeMap = dict
 genlayer_stub.DynArray = list
 

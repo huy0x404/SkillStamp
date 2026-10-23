@@ -35,6 +35,7 @@ node cli.mjs badges <your_address>
 | `get_claim(id)` | view | full record |
 | `get_claims_by_owner(owner)` | view | list of ids |
 | `get_badges(owner)` | view | verified claims with level != NONE |
+| `get_badge_metadata(id)` | view | Soulbound Badge metadata descriptor |
 | `get_count()` | view | total claims |
 
 ## Test plan (run on Studio)

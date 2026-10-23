@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.class
+.pytest_cache/
 
 # Virtual Environments
 .venv/
@@ -30,3 +31,6 @@ Thumbs.db
 dist/
 build/
 .genlayer/
+
+#
+AGENTS.md

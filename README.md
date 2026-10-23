@@ -1,7 +1,17 @@
-# SkillStamp
+# SkillStamp · Decentralized AI Skill Credentials on GenLayer
+
+> **🌐 Live 24/7 Web Application:** [https://huy0x404.github.io/SkillStamp/](https://huy0x404.github.io/SkillStamp/)
 
 Claim a skill with a public evidence URL. GenLayer validators fetch the page, grade it
 against a fixed rubric with an LLM, and agree on a badge level: `NONE`, `BASIC`, `SOLID`, `STRONG`.
+
+### ⚡ GenLayer Bradbury Testnet
+- **Network Name:** GenLayer Bradbury Testnet
+- **Chain ID:** `4221` (`0x107d`)
+- **RPC Endpoint:** `https://rpc-bradbury.genlayer.com`
+- **Native Currency:** `GEN`
+- **Block Explorer:** [https://explorer-bradbury.genlayer.com/](https://explorer-bradbury.genlayer.com/)
+- **Testnet Faucet:** [https://testnet-faucet.genlayer.foundation/](https://testnet-faucet.genlayer.foundation/)
 
 ## How grading works
 - Rubric: `relevance`, `depth`, `authenticity`, each scored 0-2.

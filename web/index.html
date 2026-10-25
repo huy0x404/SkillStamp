@@ -1991,50 +1991,38 @@
 
         $("#listErr").innerHTML = `Giao dịch triển khai đã phát: <a href="https://explorer-bradbury.genlayer.com/tx/${txHash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); text-decoration:underline; font-family:var(--font-mono)">${txHash.slice(0, 14)}... ↗</a> (Đang chờ đồng thuận từ Validators...)`;
 
-        await client.waitForTransactionReceipt({
+        const receipt = await client.waitForTransactionReceipt({
           hash: txHash,
           status: TransactionStatus.ACCEPTED,
-          retries: 60,
+          retries: 100,
           interval: 3000
         });
 
-        let newContractAddress = null;
-        try {
-          const tx = await client.getTransaction({ hash: txHash });
-          if (tx) {
-            newContractAddress = tx.contract_address || tx.contractAddress || (tx.recipient && tx.recipient !== "0x0000000000000000000000000000000000000000" ? tx.recipient : null) || tx.to_address || tx.recipient_address || tx.txDataDecoded?.contractAddress;
-          }
-        } catch (_) {}
+        // GenLayer contracts return contract_address in receipt.data or receipt directly
+        let newContractAddress = receipt?.data?.contract_address ||
+                                 receipt?.contract_address ||
+                                 receipt?.contractAddress ||
+                                 receipt?.data?.contractAddress ||
+                                 receipt?.recipient;
 
         if (!newContractAddress) {
           try {
-            const receipt = await client.getTransactionReceipt({ hash: txHash });
-            newContractAddress = receipt?.contractAddress || receipt?.contract_address;
-          } catch (_) {}
-        }
-
-        if (!newContractAddress) {
-          try {
-            const rpcUrl = targetChain.rpcUrls?.default?.http?.[0] || "https://rpc-bradbury.genlayer.com";
-            const res = await fetch(rpcUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionReceipt", params: [txHash] })
-            });
-            const rData = await res.json();
-            if (rData?.result?.contractAddress) {
-              newContractAddress = rData.result.contractAddress;
+            const tx = await client.getTransaction({ hash: txHash });
+            if (tx) {
+              newContractAddress = tx.contract_address || tx.contractAddress || (tx.recipient && tx.recipient !== "0x0000000000000000000000000000000000000000" ? tx.recipient : null) || tx.to_address || tx.recipient_address || tx.txDataDecoded?.contractAddress || tx.data?.contract_address;
             }
           } catch (_) {}
         }
 
-        if (!newContractAddress) {
-          const manualAddr = prompt(`Giao dịch triển khai đã hoàn tất trên GenLayer Bradbury!\nTx Hash: ${txHash}\n\nVui lòng kiểm tra địa chỉ hợp đồng trên Explorer hoặc dán địa chỉ Contract vừa tạo vào đây:`, "");
-          if (manualAddr && manualAddr.startsWith("0x")) {
-            newContractAddress = manualAddr.trim();
-          } else {
-            throw new Error(`Giao dịch triển khai thành công với Tx: ${txHash}. Vui lòng xem địa chỉ hợp đồng trên Explorer (${txHash}) và dán vào ô Contract Address.`);
-          }
+        if (!newContractAddress || !/^0x[a-fA-F0-9]{40}$/.test(newContractAddress)) {
+          $("#listErr").innerHTML = `
+            <div style="background:var(--surface-inset); padding:16px; border-radius:12px; border:1px solid var(--border-glow); margin-top:8px">
+              <span style="color:var(--tier-strong); font-weight:700">✓ Giao dịch triển khai đã được Validators Bradbury chấp thuận!</span><br/>
+              <div style="margin:8px 0; font-size:13px">Tx Hash: <a href="https://explorer-bradbury.genlayer.com/tx/${txHash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); font-family:var(--font-mono)">${txHash} ↗</a></div>
+              <div style="font-size:13px; color:var(--ink-secondary)">Vui lòng bấm link Explorer trên để xem mục <strong>Contract Address</strong>, sau đó dán vào ô Contract Address phía trên và bấm <strong>Connect Contract</strong> để bắt đầu sử dụng.</div>
+            </div>
+          `;
+          return;
         }
 
         $("#addr").value = newContractAddress;
@@ -2451,8 +2439,12 @@
       if ($("#networkSelect")) $("#networkSelect").value = "bradbury";
 
       let savedContract = localStorage.getItem("skillstamp_contract_address") || "";
-      // If user previously saved their personal wallet address, discard it
-      if (savedContract.toLowerCase() === "0xdd13cfcd8549d5d342e32cf49e334edf1ed5bb0f") {
+      const staleAddresses = [
+        "0xdd13cfcd8549d5d342e32cf49e334edf1ed5bb0f",
+        "0xd0d98618b807ff17ce33f7e9ddb6506e8176dbb2",
+        "0xe17bc35b7250f8e9bbbb6cff60db73d0a6f21fd1"
+      ];
+      if (staleAddresses.includes(savedContract.toLowerCase())) {
         try { localStorage.removeItem("skillstamp_contract_address"); } catch (_) {}
         savedContract = "";
       }

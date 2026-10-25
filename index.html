@@ -1394,15 +1394,16 @@
 
         const client = getClient();
         const hasMetaMask = typeof window !== "undefined" && Boolean(window.ethereum) && Boolean(currentWalletAddress);
-        const activeAccount = hasMetaMask ? currentWalletAddress : (fallbackAccount || (fallbackAccount = createAccount()));
+        // Important: in genlayer-js, call accounts must be an object with .address to satisfy viem ABI encoders
+        const callAccount = hasMetaMask ? { address: currentWalletAddress } : (fallbackAccount || (fallbackAccount = createAccount()));
 
-        // Execute state-modifying write transaction through connected user account
+        // Execute state-modifying write transaction through connected user account via MetaMask provider
         const hash = await client.writeContract({
           address,
           functionName: fn,
           args,
           value: 0n,
-          account: activeAccount
+          account: callAccount
         });
 
         if (networkType === "bradbury" && hash) {
@@ -1979,16 +1980,19 @@
 
         const client = createClient({
           chain: targetChain,
-          account: currentWalletAddress,
+          account: currentWalletAddress, // string activates provider methods in transport
           provider: window.ethereum
         });
 
         $("#listErr").innerHTML = `<span class="spinner" aria-hidden="true"></span> Đang gửi giao dịch triển khai hợp đồng tới MetaMask... Vui lòng xác nhận trên ví!`;
 
+        // Object with .address satisfies viem ABI encoder while routing eth_sendTransaction via provider
+        const deployAccount = { address: currentWalletAddress };
+
         const txHash = await client.deployContract({
           code: SKILL_STAMP_CONTRACT_CODE,
           args: [],
-          account: currentWalletAddress
+          account: deployAccount
         });
 
         $("#listErr").innerHTML = `Giao dịch triển khai đã phát: <a href="https://explorer-bradbury.genlayer.com/tx/${txHash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); text-decoration:underline; font-family:var(--font-mono)">${txHash.slice(0, 14)}... ↗</a> (Đang chờ đồng thuận từ Validators...)`;
@@ -2003,7 +2007,9 @@
         let newContractAddress = null;
         try {
           const tx = await client.getTransaction({ hash: txHash });
-          newContractAddress = tx.contract_address || tx.contractAddress || (tx.recipient && tx.recipient !== "0x0000000000000000000000000000000000000000" ? tx.recipient : null) || tx.to_address || tx.recipient_address || tx.txDataDecoded?.contractAddress;
+          if (tx) {
+            newContractAddress = tx.contract_address || tx.contractAddress || (tx.recipient && tx.recipient !== "0x0000000000000000000000000000000000000000" ? tx.recipient : null) || tx.to_address || tx.recipient_address || tx.txDataDecoded?.contractAddress;
+          }
         } catch (_) {}
 
         if (!newContractAddress) {
@@ -2014,7 +2020,27 @@
         }
 
         if (!newContractAddress) {
-          throw new Error("Không thể trích xuất địa chỉ hợp đồng từ biên lai giao dịch: " + txHash);
+          try {
+            const rpcUrl = targetChain.rpcUrls?.default?.http?.[0] || "https://rpc-bradbury.genlayer.com";
+            const res = await fetch(rpcUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionReceipt", params: [txHash] })
+            });
+            const rData = await res.json();
+            if (rData?.result?.contractAddress) {
+              newContractAddress = rData.result.contractAddress;
+            }
+          } catch (_) {}
+        }
+
+        if (!newContractAddress) {
+          const manualAddr = prompt(`Giao dịch triển khai đã hoàn tất trên GenLayer Bradbury!\nTx Hash: ${txHash}\n\nVui lòng kiểm tra địa chỉ hợp đồng trên Explorer hoặc dán địa chỉ Contract vừa tạo vào đây:`, "");
+          if (manualAddr && manualAddr.startsWith("0x")) {
+            newContractAddress = manualAddr.trim();
+          } else {
+            throw new Error(`Giao dịch triển khai thành công với Tx: ${txHash}. Vui lòng xem địa chỉ hợp đồng trên Explorer (${txHash}) và dán vào ô Contract Address.`);
+          }
         }
 
         $("#addr").value = newContractAddress;

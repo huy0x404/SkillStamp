@@ -1260,6 +1260,8 @@
     // DOM Selector Helpers
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
+    window.$ = $;
+    window.$$ = $$;
 
     // Strict Escaping Function (AGENTS.md Section 8)
     const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({
@@ -1414,7 +1416,15 @@
         return hash;
       };
 
-      await read("get_count"); // Fail-fast if address is invalid
+      try {
+        await read("get_count"); // Fail-fast if address is invalid
+      } catch (err) {
+        const errStr = String(err?.message || err).toLowerCase();
+        if (errStr.includes("contract not found") || errStr.includes("not found")) {
+          throw new Error("Không tìm thấy Intelligent Contract tại địa chỉ " + address + " trên mạng " + targetChain.name + ". (Lưu ý: Không nhập địa chỉ ví cá nhân). Hãy bấm '🚀 Deploy Contract' để triển khai hợp đồng mới.");
+        }
+        throw err;
+      }
 
       return {
         get who() {
@@ -1545,7 +1555,7 @@
               Bạn đang ở chế độ Trực tiếp (Live Mode) trên mạng <strong>GenLayer Bradbury Testnet (Chain ID 4221)</strong>. Hãy kết nối ví MetaMask, nhập địa chỉ hợp đồng đã triển khai vào ô <strong>Contract Address</strong> phía trên và bấm <strong>Connect Contract</strong> (hoặc bấm <strong>🚀 Deploy Contract</strong> để triển khai hợp đồng mới trực tiếp từ tài khoản ví của bạn).
             </div>
             <div style="display:flex; justify-content:center; gap:12px; flex-wrap:wrap">
-              <button type="button" class="ghost" onclick="$('#deployBtn').click()" style="color:var(--brand-primary); font-size:13px; padding:10px 18px">🚀 Triển khai Hợp đồng mới qua MetaMask</button>
+              <button type="button" class="ghost" id="deployTriggerBtn" style="color:var(--brand-primary); font-size:13px; padding:10px 18px">🚀 Triển khai Hợp đồng mới qua MetaMask</button>
             </div>
           </div>
         `;
@@ -2403,8 +2413,11 @@
           setMode(true, savedNet);
         } catch (e) {
           console.warn("Could not auto-connect saved contract", e);
+          try { localStorage.removeItem("skillstamp_contract_address"); } catch (_) {}
+          $("#addr").value = "";
           api = liveApiUnconnected(savedNet);
           setMode(true, savedNet);
+          $("#listErr").innerHTML = `<span style="color:var(--err-color)">⚠️ ${esc(msg(e))}</span>`;
         }
       } else {
         api = liveApiUnconnected(savedNet);

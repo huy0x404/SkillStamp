@@ -108,6 +108,9 @@ class SkillStamp(gl.Contract):
     count: u256
 
     def __init__(self) -> None:
+        self.claims = TreeMap()
+        self.by_owner = TreeMap()
+        self.seen = TreeMap()
         self.count = u256(0)
 
     # ------------------------------------------------------------------ writes
@@ -148,7 +151,9 @@ class SkillStamp(gl.Contract):
             authenticity=u256(0),
             reason="",
         )
-        self.by_owner.get_or_insert_default(sender).append(claim_id)
+        if sender not in self.by_owner:
+            self.by_owner[sender] = DynArray()
+        self.by_owner[sender].append(claim_id)
         return int(claim_id)
 
     @gl.public.write

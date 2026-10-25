@@ -11,6 +11,10 @@
     href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>1🏅</text></svg>">
   <meta name="color-scheme" content="light dark">
   <script>
+    // Global query helpers defined immediately for all scripts & event handlers
+    window.$ = (sel, ctx = document) => ctx.querySelector(sel);
+    window.$$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+
     // Prevent flash of unstyled theme (FOUC)
     try {
       const savedTheme = localStorage.getItem("skillstamp-color-scheme");
@@ -1996,8 +2000,18 @@
           interval: 3000
         });
 
-        const tx = await client.getTransaction({ hash: txHash });
-        const newContractAddress = tx.contract_address || tx.to_address || tx.recipient_address;
+        let newContractAddress = null;
+        try {
+          const tx = await client.getTransaction({ hash: txHash });
+          newContractAddress = tx.contract_address || tx.contractAddress || (tx.recipient && tx.recipient !== "0x0000000000000000000000000000000000000000" ? tx.recipient : null) || tx.to_address || tx.recipient_address || tx.txDataDecoded?.contractAddress;
+        } catch (_) {}
+
+        if (!newContractAddress) {
+          try {
+            const receipt = await client.getTransactionReceipt({ hash: txHash });
+            newContractAddress = receipt?.contractAddress || receipt?.contract_address;
+          } catch (_) {}
+        }
 
         if (!newContractAddress) {
           throw new Error("Không thể trích xuất địa chỉ hợp đồng từ biên lai giao dịch: " + txHash);
@@ -2025,6 +2039,10 @@
       $("#listErr").textContent = "";
       if (!addr) {
         $("#listErr").textContent = "Vui lòng nhập địa chỉ hợp đồng GenLayer (0x...) để kết nối!";
+        return;
+      }
+      if (currentWalletAddress && addr.toLowerCase() === currentWalletAddress.toLowerCase()) {
+        $("#listErr").innerHTML = `<span style="color:var(--err-color)">⚠️ Địa chỉ bạn nhập (<code>${esc(addr.slice(0, 10))}...</code>) là <strong>địa chỉ ví MetaMask cá nhân</strong> của bạn, không phải địa chỉ hợp đồng! Vui lòng bấm <strong>🚀 Deploy Contract</strong> để triển khai hợp đồng SkillStamp của riêng bạn lên GenLayer.</span>`;
         return;
       }
       busy(ev.target, true, "Connecting...");
@@ -2397,17 +2415,29 @@
       }
     } catch (e) { }
 
+    // Global click delegation for dynamically rendered deploy buttons
+    document.addEventListener("click", (e) => {
+      const trigger = e.target.closest("#deployTriggerBtn, [data-deploy-trigger]");
+      if (trigger) {
+        const deployBtn = $("#deployBtn");
+        if (deployBtn) deployBtn.click();
+      }
+    });
+
     // Auto-Restore Wallet, Contract and Mode on Page Refresh (Always Live Mode)
     (async () => {
       const savedNet = localStorage.getItem("skillstamp_target_network") || "bradbury";
       $("#networkSelect").value = savedNet;
 
-      const savedContract = localStorage.getItem("skillstamp_contract_address") || "";
-      if (savedContract) {
-        $("#addr").value = savedContract;
+      let savedContract = localStorage.getItem("skillstamp_contract_address") || "";
+      // If user previously saved their personal wallet address, discard it
+      if (savedContract.toLowerCase() === "0xdd13cfcd8549d5d342e32cf49e334edf1ed5bb0f") {
+        try { localStorage.removeItem("skillstamp_contract_address"); } catch (_) {}
+        savedContract = "";
       }
 
       if (savedContract) {
+        $("#addr").value = savedContract;
         try {
           api = await liveApi(savedContract, savedNet);
           setMode(true, savedNet);

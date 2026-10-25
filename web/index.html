@@ -1318,6 +1318,32 @@
       } catch (e) {}
     }
 
+    // Safe MetaMask Provider Proxy: ensures gas limit is sufficient for GenLayer transactions
+    function getSafeMetaMaskProvider() {
+      if (typeof window === "undefined" || !window.ethereum) return undefined;
+      return new Proxy(window.ethereum, {
+        get(target, prop, receiver) {
+          if (prop === "request") {
+            return async function({ method, params = [] }) {
+              if (method === "eth_sendTransaction" && params && params[0]) {
+                const tx = { ...params[0] };
+                // GenLayer Intelligent Contract deployment & execution requires 3M-4M gas.
+                // genlayer-js defaults to 200,000 gas which is too low for Python bytecode and causes MetaMask rejection.
+                const currentGas = tx.gas ? parseInt(tx.gas, 16) : 0;
+                if (currentGas < 3000000) {
+                  tx.gas = "0x3d0900"; // 4,000,000 gas buffer
+                }
+                return await target.request({ method, params: [tx] });
+              }
+              return await target.request({ method, params });
+            };
+          }
+          const val = Reflect.get(target, prop, receiver);
+          return typeof val === "function" ? val.bind(target) : val;
+        }
+      });
+    }
+
     // Unconnected Live State before a contract address is provided
     function liveApiUnconnected(networkType = "bradbury") {
       return {
@@ -1356,7 +1382,7 @@
         return createClient({
           chain: targetChain,
           account: activeAccount,
-          ...(hasMetaMask ? { provider: window.ethereum } : {})
+          ...(hasMetaMask ? { provider: getSafeMetaMaskProvider() } : {})
         });
       }
 
@@ -1485,7 +1511,16 @@
       }
     };
 
-    const msg = (e) => e?.shortMessage ?? e?.message ?? String(e);
+    const msg = (e) => {
+      if (!e) return "Lỗi không xác định";
+      if (e.shortMessage) return e.shortMessage;
+      if (e.message) return e.message;
+      if (e.data && e.data.message) return e.data.message;
+      if (typeof e === "object") {
+        try { return JSON.stringify(e); } catch (_) {}
+      }
+      return String(e);
+    };
 
     function updateStats(claims) {
       const total = claims.length;
@@ -1975,7 +2010,7 @@
         const client = createClient({
           chain: targetChain,
           account: currentWalletAddress, // string activates provider methods in transport
-          provider: window.ethereum
+          provider: getSafeMetaMaskProvider()
         });
 
         $("#listErr").innerHTML = `<span class="spinner" aria-hidden="true"></span> Đang gửi giao dịch triển khai hợp đồng tới MetaMask... Vui lòng xác nhận trên ví!`;
@@ -2048,7 +2083,13 @@
           `;
         }
       } catch (err) {
-        $("#listErr").textContent = "Lỗi triển khai hợp đồng: " + msg(err);
+        console.error("Deploy contract error:", err);
+        const errMsg = msg(err);
+        if (errMsg.includes("User rejected") || errMsg.includes("4001") || errMsg.includes("rejected the request")) {
+          $("#listErr").innerHTML = `<span style="color:var(--err-color)">⚠️ Giao dịch bị hủy: Bạn đã từ chối xác nhận giao dịch trên ví MetaMask.</span>`;
+        } else {
+          $("#listErr").innerHTML = `<span style="color:var(--err-color)">⚠️ Lỗi triển khai hợp đồng: ${esc(errMsg)}</span>`;
+        }
       } finally {
         busy(ev.target, false, "🚀 Deploy Contract");
       }
@@ -2077,7 +2118,12 @@
       } catch (err) {
         api = liveApiUnconnected(net);
         setMode(true, net);
-        $("#listErr").textContent = "Kết nối hợp đồng thất bại: " + msg(err);
+        const errMsg = msg(err);
+        if (errMsg.includes("contract not found") || errMsg.includes("Không tìm thấy") || errMsg.includes("not found")) {
+          $("#listErr").innerHTML = `<span style="color:var(--err-color)">⚠️ Địa chỉ <code>${esc(addr)}</code> không phải là Intelligent Contract SkillStamp (hoặc chưa tồn tại trên GenLayer Bradbury). Vui lòng bấm <strong>🚀 Deploy Contract</strong> để triển khai hợp đồng mới.</span>`;
+        } else {
+          $("#listErr").textContent = "Kết nối hợp đồng thất bại: " + errMsg;
+        }
         await refresh();
       } finally {
         busy(ev.target, false, "Connect Contract");
@@ -2458,7 +2504,12 @@
         "0xd0d98618b807ff17ce33f7e9ddb6506e8176dbb2",
         "0xe17bc35b7250f8e9bbbb6cff60db73d0a6f21fd1",
         "0x406a9a20f8b3b28ceab2f6fb6521770e44400280",
-        "0x5fb906894f6ef633f68de89b57592a9bd497ac18"
+        "0x5fb906894f6ef633f68de89b57592a9bd497ac18",
+        "0xe0b7f8dfc7ef37c9419e8e1e005ee4f579619704",
+        "0x21501f58f93378f0881c7de269fb6e68fc912f9a",
+        "0xa1f123d89c085cd21744ece5750777757062122e",
+        "0xfa5cb6f800cae0b74ede2a9490ea3e3100a45e3e",
+        "0x6ba06a475cc86d0bbbafd1f92720d5d14bfc7b06"
       ];
       if (staleAddresses.includes(savedContract.toLowerCase())) {
         try { localStorage.removeItem("skillstamp_contract_address"); } catch (_) {}
@@ -2476,7 +2527,7 @@
           $("#addr").value = "";
           api = liveApiUnconnected(savedNet);
           setMode(true, savedNet);
-          $("#listErr").innerHTML = `<span style="color:var(--err-color)">⚠️ ${esc(msg(e))}</span>`;
+          $("#listErr").innerHTML = `<span style="color:var(--tier-basic)">💡 Chưa kết nối hợp đồng SkillStamp. Hãy bấm <strong>🚀 Deploy Contract</strong> để triển khai hợp đồng trên GenLayer Bradbury.</span>`;
         }
       } else {
         api = liveApiUnconnected(savedNet);

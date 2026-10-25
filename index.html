@@ -983,6 +983,7 @@ dialog::backdrop {
       </button>
     </div>
     <div class="err-box" id="claimErr" role="alert"></div>
+    <div id="claimSuccess" style="display:none; margin-top:12px; padding:14px 16px; border-radius:12px; background:var(--tier-strong-bg); border:1px solid var(--tier-strong); color:var(--ink-primary); font-size:13px"></div>
   </section>
 
   <!-- Stats Overview -->
@@ -1148,7 +1149,26 @@ function computeLevelFromScores(scores) {
 // Persistent Storage & Demo Backend
 // -----------------------------------------------------------------------------
 const STORAGE_KEY = "skillstamp_claims_v4";
+const TX_STORAGE_KEY = "skillstamp_tx_hashes_v2";
 let currentWalletAddress = "";
+
+function getStoredTxHashes() {
+  try {
+    const raw = localStorage.getItem(TX_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveStoredTxHash(key, hash) {
+  if (!hash || typeof hash !== "string") return;
+  try {
+    const map = getStoredTxHashes();
+    map[key] = hash;
+    localStorage.setItem(TX_STORAGE_KEY, JSON.stringify(map));
+  } catch (e) {}
+}
 
 function loadStoredClaims() {
   try {
@@ -1306,8 +1326,18 @@ async function liveApi(address, networkType = "bradbury") {
   ]);
 
   const targetChain = networkType === "bradbury" ? (chains.testnetBradbury || chains.studionet) : chains.studionet;
-  const account = createAccount(); // Throwaway account for demo interaction
-  const client = createClient({ chain: targetChain, account });
+  let fallbackAccount = null;
+
+  function getClient() {
+    const hasMetaMask = typeof window !== "undefined" && Boolean(window.ethereum) && Boolean(currentWalletAddress);
+    const activeAccount = hasMetaMask ? currentWalletAddress : (fallbackAccount || (fallbackAccount = createAccount()));
+
+    return createClient({
+      chain: targetChain,
+      account: activeAccount,
+      ...(hasMetaMask ? { provider: window.ethereum } : {})
+    });
+  }
 
   const plain = (v) => {
     if (typeof v === "bigint") return Number(v);
@@ -1317,32 +1347,92 @@ async function liveApi(address, networkType = "bradbury") {
     return v;
   };
 
-  const read = async (fn, args = []) => plain(await client.readContract({ address, functionName: fn, args }));
+  const read = async (fn, args = []) => plain(await getClient().readContract({ address, functionName: fn, args }));
+
   const write = async (fn, args) => {
-    const hash = await client.writeContract({ address, functionName: fn, args, value: 0n });
-    if (networkType === "bradbury") {
-      $("#listErr").innerHTML = `Giao dịch đã phát: <a href="https://explorer-bradbury.genlayer.com/tx/${hash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); text-decoration:underline">Xem Tx trên Explorer (${hash.slice(0, 10)}...) ↗</a>`;
+    // Ensure the transaction is signed and broadcast by the user's active wallet account
+    if (typeof window !== "undefined" && window.ethereum && !currentWalletAddress) {
+      try {
+        await ensureBradburyNetwork();
+        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+        if (accounts && accounts[0]) {
+          let balDisplay = "0.0000";
+          try {
+            const rawBal = await window.ethereum.request({ method: "eth_getBalance", params: [accounts[0], "latest"] });
+            if (rawBal) balDisplay = (parseInt(rawBal, 16) / 1e18).toFixed(4);
+          } catch (e) {}
+          updateWalletUI(accounts[0], balDisplay);
+        }
+      } catch (err) {
+        throw new Error("Vui lòng kết nối ví MetaMask để thực hiện giao dịch ghi vào hợp đồng: " + msg(err));
+      }
+    } else if (typeof window !== "undefined" && window.ethereum && currentWalletAddress && networkType === "bradbury") {
+      await ensureBradburyNetwork();
     }
-    await client.waitForTransactionReceipt({ hash, status: TransactionStatus.ACCEPTED, retries: 60, interval: 3000 });
+
+    const client = getClient();
+    const hasMetaMask = typeof window !== "undefined" && Boolean(window.ethereum) && Boolean(currentWalletAddress);
+    const activeAccount = hasMetaMask ? currentWalletAddress : (fallbackAccount || (fallbackAccount = createAccount()));
+
+    // Execute state-modifying write transaction through connected user account
+    const hash = await client.writeContract({
+      address,
+      functionName: fn,
+      args,
+      value: 0n,
+      account: activeAccount
+    });
+
+    if (networkType === "bradbury" && hash) {
+      $("#listErr").innerHTML = `Giao dịch đã phát lên Bradbury: <a href="https://explorer-bradbury.genlayer.com/tx/${hash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); font-family:var(--font-mono); text-decoration:underline">Xem Tx trên Explorer (${hash.slice(0, 10)}...) ↗</a>`;
+    }
+
+    // Wait for validator consensus receipt
+    await client.waitForTransactionReceipt({
+      hash,
+      status: TransactionStatus.ACCEPTED,
+      retries: 60,
+      interval: 3000
+    });
+
     return hash;
   };
 
   await read("get_count"); // Fail-fast if address is invalid
 
   return {
-    who: account.address,
+    get who() {
+      return currentWalletAddress || (fallbackAccount ? fallbackAccount.address : "No account connected");
+    },
     chainName: targetChain.name,
-    claim_skill: (skill, url) => write("claim_skill", [skill, url]),
-    verify: (id) => write("verify", [Number(id)]),
+    claim_skill: async (skill, url) => {
+      const hash = await write("claim_skill", [skill, url]);
+      if (hash && typeof hash === "string") {
+        saveStoredTxHash(`claim_${skill}_${url}`, hash);
+      }
+      return hash;
+    },
+    verify: async (id) => {
+      const hash = await write("verify", [Number(id)]);
+      if (hash && typeof hash === "string") {
+        saveStoredTxHash(`verify_${id}`, hash);
+      }
+      return hash;
+    },
     async all() {
       const count = await read("get_count");
       const claims = [];
+      const txMap = getStoredTxHashes();
       for (let i = count - 1; i >= 0 && claims.length < 50; i--) {
         const c = await read("get_claim", [i]);
-        if (c && c.relevance !== undefined) {
-          c.scores = { relevance: Number(c.relevance), depth: Number(c.depth), authenticity: Number(c.authenticity) };
+        if (c) {
+          c.id = i;
+          if (c.relevance !== undefined) {
+            c.scores = { relevance: Number(c.relevance), depth: Number(c.depth), authenticity: Number(c.authenticity) };
+          }
+          c.txHash = txMap[`verify_${i}`] || txMap[`claim_${i}`] || txMap[`claim_${c.skill}_${c.url}`];
+          claims.push(c);
         }
-        claims.push(c);
       }
       return claims;
     }
@@ -1394,12 +1484,20 @@ function setMode(live, networkType = "bradbury") {
       text.textContent = "Live · Studionet";
       banner.innerHTML = `<strong>Connected to GenLayer Studionet:</strong> Transactions execute on-chain. Verification invokes decentralized validators running LLM comparative consensus.`;
     }
-    who.innerHTML = `Account: <span class="owner-addr">${esc(api.who)}</span>`;
+    if (currentWalletAddress) {
+      who.innerHTML = `Wallet: <a href="https://explorer-bradbury.genlayer.com/address/${esc(currentWalletAddress)}" target="_blank" rel="noopener noreferrer" class="owner-addr" style="color:var(--tier-strong); text-decoration:none">${esc(currentWalletAddress.slice(0, 6))}...${esc(currentWalletAddress.slice(-4))} ↗</a>`;
+    } else {
+      who.innerHTML = `Account: <span class="owner-addr">${esc(api.who)}</span> <span style="font-size:11px; color:var(--ink-muted)">(Chưa kết nối MetaMask)</span>`;
+    }
   } else {
     dot.className = "indicator-dot";
     text.textContent = "Demo mode";
     banner.innerHTML = `<strong>Demo mode active:</strong> Simulation with deterministic rubric evaluation runs directly in your browser. Connect a deployed contract address below or connect MetaMask to switch to Live GenLayer validator consensus.`;
-    who.textContent = `Account: Demo Simulator`;
+    if (currentWalletAddress) {
+      who.innerHTML = `Wallet: <span class="owner-addr">${esc(currentWalletAddress.slice(0, 6))}...${esc(currentWalletAddress.slice(-4))}</span> (Demo Simulation)`;
+    } else {
+      who.textContent = `Account: Demo Simulator`;
+    }
   }
 }
 
@@ -1520,6 +1618,14 @@ function renderClaims() {
           </div>
           <div>Status: <strong>${esc(c.status)}</strong></div>
         </div>
+        ${c.txHash ? `
+          <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border-subtle); display:flex; justify-content:space-between; align-items:center; font-size:11.5px">
+            <span style="color:var(--ink-muted)">On-Chain Tx:</span>
+            <a href="https://explorer-bradbury.genlayer.com/tx/${esc(c.txHash)}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); font-family:var(--font-mono); text-decoration:none" title="${esc(c.txHash)}">
+              ${esc(c.txHash.slice(0, 10))}...${esc(c.txHash.slice(-8))} ↗
+            </a>
+          </div>
+        ` : ""}
       </article>
     `;
   }).join("");
@@ -1572,6 +1678,17 @@ function openInspectModal(claimId) {
         <button type="button" class="copy-btn" data-copy="${esc(c.owner)}">Copy</button>
       </div>
     </div>
+    ${c.txHash ? `
+      <div style="margin-bottom:12px">
+        <label>Mã băm giao dịch thực tế (On-Chain Tx Hash)</label>
+        <div class="owner-addr" style="font-size:12px; width:100%; justify-content:space-between; word-break:break-all">
+          <a href="https://explorer-bradbury.genlayer.com/tx/${esc(c.txHash)}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); text-decoration:none; font-family:var(--font-mono)">
+            ${esc(c.txHash)} ↗
+          </a>
+          <button type="button" class="copy-btn" data-copy="${esc(c.txHash)}">Copy</button>
+        </div>
+      </div>
+    ` : ""}
     <div style="margin-bottom:12px">
       <label>Validator Consensus Reason</label>
       <div class="claim-reason" style="margin-top:4px">${esc(c.reason || "Verification in progress.")}</div>
@@ -1802,14 +1919,36 @@ $("#claimBtn").onclick = async (ev) => {
   const skill = $("#skill").value.trim();
   const url = $("#url").value.trim();
   $("#claimErr").textContent = "";
+  const claimSuccess = $("#claimSuccess");
+  if (claimSuccess) claimSuccess.style.display = "none";
   busy(ev.target, true, "Submitting Claim...");
 
   try {
-    await api.claim_skill(skill, url);
+    const txHash = await api.claim_skill(skill, url);
     $("#skill").value = "";
     $("#url").value = "";
     $("#skillCount").textContent = "0/80";
     $("#urlCount").textContent = "0/300";
+
+    if (claimSuccess) {
+      claimSuccess.style.display = "block";
+      if (txHash && typeof txHash === "string" && txHash.startsWith("0x")) {
+        claimSuccess.innerHTML = `
+          <div style="font-weight:700; color:var(--tier-strong); margin-bottom:4px">✓ Giao dịch Claim đã được ghi nhận trên Blockchain!</div>
+          <div style="font-size:12.5px; line-height:1.6">
+            <strong>Mã băm giao dịch thực tế (Tx Hash):</strong><br>
+            <a href="https://explorer-bradbury.genlayer.com/tx/${txHash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); font-family:var(--font-mono); font-size:12px; font-weight:600; text-decoration:underline; word-break:break-all">
+              ${txHash} ↗
+            </a>
+            <div style="margin-top:4px; font-size:11.5px; color:var(--ink-secondary)">
+              Tài khoản thực hiện (Owner): <code>${esc(currentWalletAddress || api.who)}</code>
+            </div>
+          </div>
+        `;
+      } else {
+        claimSuccess.innerHTML = `✓ Claim kỹ năng đã được tạo thành công trong chế độ Demo!`;
+      }
+    }
     await refresh();
   } catch (err) {
     $("#claimErr").textContent = msg(err);
@@ -1894,13 +2033,28 @@ $("#list").onclick = async (ev) => {
     valStatuses.forEach((st) => { st.textContent = "Equivalence Match: Agreed!"; });
 
     try {
-      await api.verify(claimId);
+      const realTxHash = await api.verify(claimId);
       consResultBox.style.display = "block";
-      consResultBox.innerHTML = `✓ Consensus Reached &bull; Badge Level Committed to GenVM!<br><small style="font-weight:normal">Tx Hash: 0x${Array.from({length: 40}, () => Math.floor(Math.random() * 16).toString(16)).join("")} on Bradbury Testnet</small>`;
+      if (realTxHash && typeof realTxHash === "string" && realTxHash.startsWith("0x")) {
+        consResultBox.innerHTML = `
+          <div style="font-weight:700; color:var(--tier-strong); margin-bottom:6px">✓ Đồng thuận thành công &bull; Cấp độ Badge đã ghi vào GenVM!</div>
+          <div style="font-size:12.5px; line-height:1.6">
+            <span style="color:var(--ink-secondary); font-weight:600">Mã băm giao dịch thực tế (Transaction Hash):</span><br>
+            <a href="https://explorer-bradbury.genlayer.com/tx/${realTxHash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); font-family:var(--font-mono); font-size:12px; font-weight:600; text-decoration:underline; word-break:break-all">
+              ${realTxHash} ↗
+            </a>
+            <div style="margin-top:6px; color:var(--ink-muted); font-size:11.5px">
+              Tài khoản thực hiện: <code>${esc(currentWalletAddress || api.who)}</code>
+            </div>
+          </div>
+        `;
+      } else {
+        consResultBox.innerHTML = `✓ Đồng thuận thành công &bull; Cấp độ Badge đã được xác minh trong chế độ Demo!`;
+      }
       await refresh();
       setTimeout(() => {
         if (consModal && consModal.open) consModal.close();
-      }, 1500);
+      }, 3500);
     } catch (err) {
       if (consModal && consModal.open) consModal.close();
       $("#listErr").textContent = "Verification failed: " + msg(err);
@@ -1957,8 +2111,42 @@ function updateWalletUI(address, balance = "0.0000") {
   renderClaims();
 }
 
-$("#disconnectBtn").onclick = () => {
+async function ensureBradburyNetwork() {
+  if (typeof window.ethereum === "undefined") return;
+  const bradburyParams = {
+    chainId: "0x107d", // 4221
+    chainName: "GenLayer Bradbury Testnet",
+    nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+    rpcUrls: ["https://rpc-bradbury.genlayer.com"],
+    blockExplorerUrls: ["https://explorer-bradbury.genlayer.com/"]
+  };
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: bradburyParams.chainId }]
+    });
+  } catch (switchError) {
+    if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [bradburyParams]
+      });
+    } else {
+      throw switchError;
+    }
+  }
+}
+
+$("#disconnectBtn").onclick = async () => {
   updateWalletUI("");
+  const contractAddr = $("#addr")?.value?.trim();
+  const net = $("#networkSelect")?.value;
+  if (contractAddr && net !== "demo") {
+    api = await liveApi(contractAddr, net);
+    setMode(true, net);
+    await refresh();
+  }
 };
 
 // Web3 Wallet Connect Button with 1-Click Bradbury Testnet Setup
@@ -1969,29 +2157,7 @@ $("#walletBtn").onclick = async (ev) => {
   }
   busy(ev.target, true, "Connecting MetaMask...");
   try {
-    const bradburyParams = {
-      chainId: "0x107d", // 4221
-      chainName: "GenLayer Bradbury Testnet",
-      nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
-      rpcUrls: ["https://rpc-bradbury.genlayer.com"],
-      blockExplorerUrls: ["https://explorer-bradbury.genlayer.com/"]
-    };
-
-    try {
-      await window.ethereum.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: bradburyParams.chainId }]
-      });
-    } catch (switchError) {
-      if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
-        await window.ethereum.request({
-          method: "wallet_addEthereumChain",
-          params: [bradburyParams]
-        });
-      } else {
-        throw switchError;
-      }
-    }
+    await ensureBradburyNetwork();
 
     const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
     if (accounts && accounts[0]) {
@@ -2006,7 +2172,15 @@ $("#walletBtn").onclick = async (ev) => {
 
       updateWalletUI(userAddr, balDisplay);
       $("#networkSelect").value = "bradbury";
-      setMode(true, "bradbury");
+
+      const contractAddr = $("#addr")?.value?.trim();
+      if (contractAddr) {
+        api = await liveApi(contractAddr, "bradbury");
+        setMode(true, "bradbury");
+      } else {
+        setMode(false);
+      }
+      await refresh();
     }
   } catch (err) {
     alert("Kết nối ví thất bại: " + msg(err));
@@ -2014,6 +2188,35 @@ $("#walletBtn").onclick = async (ev) => {
     busy(ev.target, false);
   }
 };
+
+// Listen for Wallet Account and Network Changes dynamically
+if (typeof window !== "undefined" && window.ethereum) {
+  window.ethereum.on("accountsChanged", async (accounts) => {
+    if (accounts && accounts[0]) {
+      const userAddr = accounts[0];
+      let balDisplay = "0.0000";
+      try {
+        const rawBal = await window.ethereum.request({ method: "eth_getBalance", params: [userAddr, "latest"] });
+        if (rawBal) balDisplay = (parseInt(rawBal, 16) / 1e18).toFixed(4);
+      } catch (e) {}
+      updateWalletUI(userAddr, balDisplay);
+
+      const contractAddr = $("#addr")?.value?.trim();
+      const net = $("#networkSelect")?.value;
+      if (contractAddr && net !== "demo") {
+        api = await liveApi(contractAddr, net);
+        setMode(true, net);
+        await refresh();
+      }
+    } else {
+      updateWalletUI("");
+    }
+  });
+
+  window.ethereum.on("chainChanged", () => {
+    window.location.reload();
+  });
+}
 
 $("#refresh").onclick = refresh;
 

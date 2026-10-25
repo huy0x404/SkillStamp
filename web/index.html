@@ -1998,41 +1998,55 @@
           interval: 3000
         });
 
-        // GenLayer contracts return contract_address in receipt.data or receipt directly
-        let newContractAddress = receipt?.data?.contract_address ||
-                                 receipt?.contract_address ||
-                                 receipt?.contractAddress ||
-                                 receipt?.data?.contractAddress ||
-                                 receipt?.recipient;
+        // GenLayer contracts return contract_address in receipt.data or txDataDecoded
+        // Note: receipt.recipient is a validator/activator node address, NOT the contract address!
+        let candidateAddress = receipt?.data?.contract_address ||
+                               receipt?.contract_address ||
+                               receipt?.contractAddress ||
+                               receipt?.data?.contractAddress;
 
-        if (!newContractAddress) {
+        if (!candidateAddress) {
           try {
             const tx = await client.getTransaction({ hash: txHash });
             if (tx) {
-              newContractAddress = tx.contract_address || tx.contractAddress || (tx.recipient && tx.recipient !== "0x0000000000000000000000000000000000000000" ? tx.recipient : null) || tx.to_address || tx.recipient_address || tx.txDataDecoded?.contractAddress || tx.data?.contract_address;
+              candidateAddress = tx.contract_address || 
+                                 tx.contractAddress || 
+                                 tx.data?.contract_address ||
+                                 (tx.txDataDecoded?.contractAddress && tx.txDataDecoded?.contractAddress !== "0x0000000000000000000000000000000000000000" ? tx.txDataDecoded.contractAddress : null);
             }
           } catch (_) {}
         }
 
-        if (!newContractAddress || !/^0x[a-fA-F0-9]{40}$/.test(newContractAddress)) {
-          $("#listErr").innerHTML = `
-            <div style="background:var(--surface-inset); padding:16px; border-radius:12px; border:1px solid var(--border-glow); margin-top:8px">
-              <span style="color:var(--tier-strong); font-weight:700">✓ Giao dịch triển khai đã được Validators Bradbury chấp thuận!</span><br/>
-              <div style="margin:8px 0; font-size:13px">Tx Hash: <a href="https://explorer-bradbury.genlayer.com/tx/${txHash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); font-family:var(--font-mono)">${txHash} ↗</a></div>
-              <div style="font-size:13px; color:var(--ink-secondary)">Vui lòng bấm link Explorer trên để xem mục <strong>Contract Address</strong>, sau đó dán vào ô Contract Address phía trên và bấm <strong>Connect Contract</strong> để bắt đầu sử dụng.</div>
-            </div>
-          `;
-          return;
+        // Verify that candidateAddress is actually an active Intelligent Contract responding to get_count
+        let isActualContract = false;
+        if (candidateAddress && /^0x[a-fA-F0-9]{40}$/i.test(candidateAddress) && candidateAddress !== "0x0000000000000000000000000000000000000000") {
+          try {
+            await client.readContract({ address: candidateAddress, functionName: "get_count", args: [] });
+            isActualContract = true;
+          } catch (e) {
+            isActualContract = false;
+          }
         }
 
-        $("#addr").value = newContractAddress;
-        try { localStorage.setItem("skillstamp_contract_address", newContractAddress); } catch (e) {}
-
-        api = await liveApi(newContractAddress, net);
-        setMode(true, net);
-        await refresh();
-
-        $("#listErr").innerHTML = `<span style="color:var(--tier-strong); font-weight:700">✓ Hợp đồng đã triển khai thành công!</span> Địa chỉ: <code style="font-family:var(--font-mono)">${newContractAddress}</code> &bull; <a href="https://explorer-bradbury.genlayer.com/address/${newContractAddress}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); text-decoration:underline">Xem trên Explorer ↗</a>`;
+        if (isActualContract) {
+          $("#addr").value = candidateAddress;
+          try { localStorage.setItem("skillstamp_contract_address", candidateAddress); } catch (e) {}
+          api = await liveApi(candidateAddress, net);
+          setMode(true, net);
+          await refresh();
+          $("#listErr").innerHTML = `<span style="color:var(--tier-strong); font-weight:700">✓ Hợp đồng đã triển khai và kết nối thành công!</span> Địa chỉ: <code style="font-family:var(--font-mono)">${candidateAddress}</code> &bull; <a href="https://explorer-bradbury.genlayer.com/address/${candidateAddress}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); text-decoration:underline">Xem trên Explorer ↗</a>`;
+        } else {
+          // If validators are still indexing the bytecode address, guide user to Explorer
+          $("#listErr").innerHTML = `
+            <div style="background:var(--surface-inset); padding:18px; border-radius:12px; border:1px solid var(--border-glow); margin-top:8px">
+              <span style="color:var(--tier-strong); font-weight:700">✓ Giao dịch triển khai đã được Validators Bradbury chấp thuận!</span><br/>
+              <div style="margin:10px 0; font-size:13px">Mã băm giao dịch (Tx Hash): <a href="https://explorer-bradbury.genlayer.com/tx/${txHash}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-primary); font-family:var(--font-mono); font-weight:600; text-decoration:underline">${txHash} ↗</a></div>
+              <div style="font-size:13px; color:var(--ink-secondary); line-height:1.6">
+                Vui lòng mở liên kết Explorer trên để xem mục <strong>Contract Address</strong> (Địa chỉ hợp đồng vừa tạo), sau đó dán vào ô <strong>Contract Address on GenLayer</strong> phía trên và bấm <strong>Connect Contract</strong> để bắt đầu sử dụng.
+              </div>
+            </div>
+          `;
+        }
       } catch (err) {
         $("#listErr").textContent = "Lỗi triển khai hợp đồng: " + msg(err);
       } finally {
@@ -2442,7 +2456,9 @@
       const staleAddresses = [
         "0xdd13cfcd8549d5d342e32cf49e334edf1ed5bb0f",
         "0xd0d98618b807ff17ce33f7e9ddb6506e8176dbb2",
-        "0xe17bc35b7250f8e9bbbb6cff60db73d0a6f21fd1"
+        "0xe17bc35b7250f8e9bbbb6cff60db73d0a6f21fd1",
+        "0x406a9a20f8b3b28ceab2f6fb6521770e44400280",
+        "0x5fb906894f6ef633f68de89b57592a9bd497ac18"
       ];
       if (staleAddresses.includes(savedContract.toLowerCase())) {
         try { localStorage.removeItem("skillstamp_contract_address"); } catch (_) {}

@@ -1009,8 +1009,7 @@
           <label for="networkSelect">Target Blockchain Network</label>
           <select id="networkSelect"
             style="width:100%; padding:12px; border-radius:12px; border:1px solid var(--border-subtle); background:var(--surface-inset); color:var(--ink-primary); font-family:inherit; font-size:14px; outline:none">
-            <option value="bradbury" selected>⚡ GenLayer Bradbury Testnet (Chain ID 4221)</option>
-            <option value="studionet">🔬 GenLayer Studio Network (Studionet)</option>
+            <option value="bradbury" selected>⚡ GenLayer Bradbury Testnet (Chain ID 4221 - Live)</option>
           </select>
         </div>
         <div style="flex: 2 1 240px">
@@ -1347,7 +1346,7 @@
         import("https://esm.sh/genlayer-js/types")
       ]);
 
-      const targetChain = networkType === "bradbury" ? (chains.testnetBradbury || chains.studionet) : chains.studionet;
+      const targetChain = chains.testnetBradbury || chains.studionet;
       let fallbackAccount = null;
 
       function getClient() {
@@ -1507,13 +1506,8 @@
       const who = $("#whoText");
 
       dot.className = "indicator-dot live";
-      if (networkType === "bradbury") {
-        text.textContent = "Live · Bradbury Testnet";
-        banner.innerHTML = "<strong>GenLayer Bradbury Testnet (Chain ID 4221):</strong> Trình xác thực phi tập trung (Validators) thực thi Web-scraping và Mô hình LLM so sánh (Comparative Equivalence Consensus) trực tiếp trên Blockchain!";
-      } else {
-        text.textContent = "Live · Studionet";
-        banner.innerHTML = "<strong>Connected to GenLayer Studionet:</strong> Transactions execute on-chain. Verification invokes decentralized validators running LLM comparative consensus.";
-      }
+      text.textContent = "Live · Bradbury Testnet";
+      banner.innerHTML = "<strong>GenLayer Bradbury Testnet (Chain ID 4221):</strong> Trình xác thực phi tập trung (Validators) thực thi Web-scraping và Mô hình LLM so sánh (Comparative Equivalence Consensus) trực tiếp trên Blockchain!";
 
       if (currentWalletAddress) {
         who.innerHTML = `Wallet: <a href="https://explorer-bradbury.genlayer.com/address/${esc(currentWalletAddress)}" target="_blank" rel="noopener noreferrer" class="owner-addr" style="color:var(--tier-strong); text-decoration:none">${esc(currentWalletAddress.slice(0, 6))}...${esc(currentWalletAddress.slice(-4))} ↗</a>`;
@@ -1975,8 +1969,8 @@
           import("https://esm.sh/genlayer-js/types")
         ]);
 
-        const net = $("#networkSelect").value;
-        const targetChain = net === "bradbury" ? (chains.testnetBradbury || chains.studionet) : chains.studionet;
+        const net = "bradbury";
+        const targetChain = chains.testnetBradbury || chains.studionet;
 
         const client = createClient({
           chain: targetChain,
@@ -2452,8 +2446,9 @@
 
     // Auto-Restore Wallet, Contract and Mode on Page Refresh (Always Live Mode)
     (async () => {
-      const savedNet = localStorage.getItem("skillstamp_target_network") || "bradbury";
-      $("#networkSelect").value = savedNet;
+      try { localStorage.setItem("skillstamp_target_network", "bradbury"); } catch (_) {}
+      const savedNet = "bradbury";
+      if ($("#networkSelect")) $("#networkSelect").value = "bradbury";
 
       let savedContract = localStorage.getItem("skillstamp_contract_address") || "";
       // If user previously saved their personal wallet address, discard it
